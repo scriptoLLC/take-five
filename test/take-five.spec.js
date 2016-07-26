@@ -53,6 +53,11 @@ test('take five', (t) => {
       server.post('/', (req, res) => res.send(201, req.body))
       server.put('/:test', (req, res) => res.send(req.urlParams))
       server.delete('/:test', (req, res) => res.send(req.params))
+      server.get('/err', (req, res) => res.err('broken'))
+      server.get('/err2', (req, res) => res.err(400, 'bad'))
+      server.get('/err3', (req, res) => res.err(418))
+      const router = server.router('ns')
+      router.get('/foo', (req, res) => res.send({message: 'hello, world'}))
     }, 'added routes')
     t.end()
   })
@@ -62,6 +67,41 @@ test('take five', (t) => {
       t.error(err, 'no errors')
       t.equal(res.statusCode, 200, 'got a 200')
       t.deepEqual(body, {hello: ['world']}, 'hello, world')
+      t.end()
+    })
+  })
+
+  t.test('get namespace', (t) => {
+    sendRequest('get', '/ns/foo', null, null, (err, res, body) => {
+      t.error(err, 'no errors')
+      t.equal(body.message, 'hello, world', 'returned')
+      t.end()
+    })
+  })
+
+  t.test('500 error', (t) => {
+    sendRequest('get', '/err', null, null, (err, res, body) => {
+      t.ok(err, 'errored')
+      t.equal(res.statusCode, 500, 'default is 500')
+      t.equal(body.message, 'broken', 'it is!')
+      t.end()
+    })
+  })
+
+  t.test('400 error', (t) => {
+    sendRequest('get', '/err2', null, null, (err, res, body) => {
+      t.ok(err, 'errored')
+      t.equal(res.statusCode, 400, 'bad content')
+      t.equal(body.message, 'bad', 'bad dudes')
+      t.end()
+    })
+  })
+
+  t.test('418 error', (t) => {
+    sendRequest('get', '/err3', null, null, (err, res, body) => {
+      t.ok(err, 'error')
+      t.equal(res.statusCode, 418, 'teapot')
+      t.equal(body.message, 'I\'m a teapot', 'short and stout')
       t.end()
     })
   })

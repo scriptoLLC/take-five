@@ -1,3 +1,4 @@
+const path = require('path')
 const http = require('http')
 const querystring = require('querystring')
 
@@ -24,6 +25,17 @@ module.exports = function (opts) {
       funcs = [funcs]
     }
     middleware.push.apply(middleware, funcs)
+  }
+
+  server.router = (ns) => {
+    const router = {}
+    methods.forEach(m => {
+      router[m] = (matcher, func) => {
+        const nsMatcher = path.join(ns, matcher)
+        addRoute(m, nsMatcher, func)
+      }
+    })
+    return router
   }
 
   server.use(cors(opts.cors || {}))

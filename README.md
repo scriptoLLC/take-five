@@ -34,15 +34,19 @@ Create and return a new HTTP server object.
 
 * `opts.maxPost?:number`: the max size for a payload. Default: 512kb
 * `opts.cors?:object`
-** `opts.cors.headers?:array(string)`: an array of headers to accept besides the default. Default: `Content-Type`, `Accept`, `X-Requested_with`
-** `opts.cors.origin?:string`: What origin(s) are accepted. Deafult: `*`
-** `opts.cors.credentials?:boolean`: Allow or deny credentials. Default: `true`
+    * `opts.cors.headers?:array(string)`: an array of headers to accept besides the default. Default: `Content-Type`, `Accept`, `X-Requested_with`
+    * `opts.cors.origin?:string`: What origin(s) are accepted. Deafult: `*`
+    * `opts.cors.credentials?:boolean`: Allow or deny credentials. Default: `true`
 
 ### `Five#use(middleware:function)`
 Add a new middleware to the stack.  Middleware will be processed in the order in
 which they are added, which means they will be run after the built-in middleware.
 
 * `middleware(request:object, response:object, next:function):function` -You must either call `next` or send data to the client when you are finshed.
+
+### `Five#router(namespace:string):object`
+Namespace routes. All routes defined off this router will be prefixed with the supplied
+namespace.  The methods have the same signature as the router provided.
 
 ### `Five#get(route:string, handler:function)`
 ### `Five#post(route:string, handler:function)`
