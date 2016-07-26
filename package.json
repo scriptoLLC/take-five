@@ -1,6 +1,6 @@
 {
   "name": "take-five",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Very minimal JSON-REST server",
   "main": "take-five.js",
   "scripts": {
