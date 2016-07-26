@@ -4,13 +4,21 @@
   "description": "Very minimal JSON-REST server",
   "main": "take-five.js",
   "scripts": {
-    "test": "tap test/*.spec.js"
+    "test": "tap test/*.spec.js",
+    "coverage": "tap --cov --coverage-report lcov test/*.spec.js"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/scriptollc/take-five.git"
   },
-  "keywords": ["REST", "JSON", "API", "Restify", "Express", "Hapi"],
+  "keywords": [
+    "REST",
+    "JSON",
+    "API",
+    "Restify",
+    "Express",
+    "Hapi"
+  ],
   "author": "Todd Kennedy <todd@selfassembled.org>",
   "license": "Apache-2.0",
   "bugs": {
@@ -20,5 +28,8 @@
   "dependencies": {
     "fast-safe-stringify": "^1.0.9",
     "wayfarer": "^6.1.5"
+  },
+  "devDependencies": {
+    "tap": "^6.2.0"
   }
 }
