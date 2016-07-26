@@ -1,0 +1,25 @@
+{
+  "name": "take-five",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scriptollc/take-five.git"
+  },
+  "keywords": [],
+  "author": "Todd Kennedy <todd@selfassembled.org>",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/scriptollc/take-five/issues"
+  },
+  "homepage": "https://github.com/scriptollc/take-five#readme",
+  "dependencies": {
+    "concat-stream": "^1.5.1",
+    "fast-safe-stringify": "^1.0.9",
+    "wayfarer": "^6.1.5"
+  }
+}
