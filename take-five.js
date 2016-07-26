@@ -11,6 +11,7 @@ const methods = ['get', 'put', 'post', 'delete']
 
 module.exports = function (opts) {
   opts = opts || {}
+  opts.maxPost = opts.maxPost || 512 * 1024
   const routers = new Map()
   const middleware = []
   const server = http.createServer()
@@ -26,9 +27,9 @@ module.exports = function (opts) {
   }
 
   server.use(cors(opts.cors || {}))
-  server.use(restrictPost)
-  server.use(parseBody)
-  server.on('request', (req, res) => handleRequest(req, res, middleware.slice(0), routers))
+  server.use(restrictPost(opts.maxPost))
+  server.use(parseBody(opts.maxPost))
+  server.on('request', (req, res) => handleRequest(req, res, middleware, routers))
 
   return server
 
