@@ -24,7 +24,7 @@ module.exports = function () {
     middleware.push.apply(middleware, funcs)
   }
 
-  server.use(cors)
+  server.use(cors())
   server.use(restrictPost)
   server.use(parseBody)
   server.use((req, res, next) => {
