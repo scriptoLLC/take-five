@@ -9,7 +9,8 @@ const parseBody = require('./lib/parse-body')
 const restrictPost = require('./lib/restrict-post')
 const methods = ['get', 'put', 'post', 'delete']
 
-module.exports = function () {
+module.exports = function (opts) {
+  opts = opts || {}
   const routers = new Map()
   const middleware = []
   const server = http.createServer()
@@ -24,13 +25,9 @@ module.exports = function () {
     middleware.push.apply(middleware, funcs)
   }
 
-  server.use(cors())
+  server.use(cors(opts.cors || {}))
   server.use(restrictPost)
   server.use(parseBody)
-  server.use((req, res, next) => {
-    console.log(`${req.method} ${req.url}`, req.body)
-    next()
-  })
   server.on('request', (req, res) => handleRequest(req, res, middleware.slice(0), routers))
 
   return server
