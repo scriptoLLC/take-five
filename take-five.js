@@ -8,6 +8,7 @@ const handleRequest = require('./lib/handle-request')
 const cors = require('./lib/cors')
 const parseBody = require('./lib/parse-body')
 const restrictPost = require('./lib/restrict-post')
+const makeRes = require('./lib/make-res')
 const methods = ['get', 'put', 'post', 'delete']
 
 module.exports = function (opts) {
@@ -41,18 +42,23 @@ module.exports = function (opts) {
   server.use(cors(opts.cors || {}))
   server.use(restrictPost(opts.maxPost))
   server.use(parseBody(opts.maxPost))
-  server.on('request', (req, res) => handleRequest(req, res, middleware, routers))
+  server.on('request', (req, res) => handleRequest(req, makeRes(res), middleware, routers))
 
   return server
 
-  function addRoute (method, matcher, func) {
+  function addRoute (method, matcher, funcs) {
     if (!routers.has(method)) {
       routers.set(method, wayfarer('/_'))
     }
+
+    if (!Array.isArray(funcs)) {
+      funcs = [funcs]
+    }
+
     routers.get(method).on(matcher, (params, req, res) => {
       req.params = querystring.parse(req.url.split('?')[1])
       req.urlParams = params
-      func(req, res)
+      handleRequest(req, res, funcs)
     })
   }
 }

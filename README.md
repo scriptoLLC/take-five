@@ -48,12 +48,13 @@ which they are added, which means they will be run after the built-in middleware
 Namespace routes. All routes defined off this router will be prefixed with the supplied
 namespace.  The methods have the same signature as the router provided.
 
-### `Five#get(route:string, handler:function)`
-### `Five#post(route:string, handler:function)`
-### `Five#put(route:string, handler:function)`
-### `Five#delete(route:string, handler:function)`
+### `Five#get(route:string, handler:(function|array(function)))`
+### `Five#post(route:string, handler:(function|array(function)))`
+### `Five#put(route:string, handler:(function|array(function)))`
+### `Five#delete(route:string, handler:(function|array(function)))`
 Add a new route to the server. Routes may be added after the server has been
-started.
+started. You can supply either a single function or an array of functions to call.
+The array will be traversed in the order it is supplied
 
 * `route:string` A [wayfarer](https://github.com/yoshuawuyts/wayfarer) route definition.
 * `handler(request:object, response:object):function`: The handler for this route.

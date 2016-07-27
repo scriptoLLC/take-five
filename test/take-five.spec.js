@@ -287,3 +287,25 @@ test('middleware fail', (t) => {
   })
   t.end()
 })
+
+test('multiple funcs on route', (t) => {
+  const server = five()
+  server.get('/', [testOne, testTwo])
+  server.listen(3000)
+  sendRequest('get', '/', null, null, (err, res, body) => {
+    t.error(err, 'no errors')
+    t.equal(res.statusCode, 200, 'yup')
+    server.close()
+    t.end()
+  })
+
+  function testOne (req, res, next) {
+    t.ok(true, 'called test function one')
+    next()
+  }
+
+  function testTwo (req, res, next) {
+    t.ok(true, 'called test function two')
+    res.send({message: 'yup'})
+  }
+})
