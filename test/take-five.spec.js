@@ -23,6 +23,11 @@ function sendRequest (method, path, body, headers, cb) {
     if (res.statusCode > 299) {
       err = true
     }
+
+    if (res.statusCode === 204) {
+      return cb(null, res, '')
+    }
+
     res.on('data', (chk) => body.push(chk.toString('utf8')))
     res.on('end', () => {
       let content
@@ -57,9 +62,18 @@ test('take five', (t) => {
       server.get('/err2', (req, res) => res.err(400, 'bad'))
       server.get('/err3', (req, res) => res.err(418))
       const router = server.router('ns')
-      router.get('/foo', (req, res) => res.send({message: 'hello, world'}))
+      router.get('/foo', (req, res) => res.send('{"message": "hello, world"}'))
     }, 'added routes')
     t.end()
+  })
+
+  t.test('not found', (t) => {
+    sendRequest('get', '/bar/doo', null, null, (err, res, body) => {
+      t.ok(err, 'errored')
+      t.equal(res.statusCode, 404, 'not found')
+      t.equal(body.message, 'Not Found', 'not found')
+      t.end()
+    })
   })
 
   t.test('get json', (t) => {
@@ -175,5 +189,101 @@ test('take five', (t) => {
     t.end()
   })
 
+  t.end()
+})
+
+test('cors', (t) => {
+  const server = five({cors: {
+    headers: ['X-Foo'],
+    origin: 'localhost',
+    credentials: false
+  }})
+  server.listen(3000)
+  server.get('/', (req, res) => {
+    res.writeHead(200)
+    res.send({message: true})
+  })
+
+  t.test('preflight', (t) => {
+    sendRequest('options', '/', null, null, (err, res, body) => {
+      t.error(err, 'no error')
+      t.equal(res.statusCode, 204, 'no content')
+      t.equal(res.headers['access-control-allow-origin'], 'localhost', 'acao')
+      t.equal(res.headers['access-control-allow-credentials'], 'false', 'acac')
+      t.equal(res.headers['access-control-allow-headers'], 'Content-Type,Accept,X-Requested-With,X-Foo', 'acah')
+      t.end()
+    })
+  })
+
+  t.test('get', (t) => {
+    sendRequest('get', '/', null, null, (err, res, body) => {
+      t.error(err, 'no error')
+      t.equal(res.statusCode, 200, 'no content')
+      t.equal(res.headers['access-control-allow-origin'], 'localhost', 'acao')
+      t.equal(res.headers['access-control-allow-credentials'], 'false', 'acac')
+      t.equal(res.headers['access-control-allow-headers'], 'Content-Type,Accept,X-Requested-With,X-Foo', 'acah')
+      t.end()
+    })
+  })
+
+  t.test('teardown', (t) => {
+    server.close()
+    t.end()
+  })
+  t.end()
+})
+
+test('body parser', (t) => {
+  const server = five({maxPost: 100})
+  server.listen(3000)
+  server.post('/', (req, res) => res.send(req.body))
+
+  // can't seem to override content-length to report a false value in either
+  // curl or the built-in http client. will have to do something with `net`
+  // likely...
+  t.test('too big', {skip: true}, (t) => {
+    const big = 'a'.repeat(200)
+    sendRequest('post', '/', big, {'content-type': 'application/json', 'content-length': 1}, (err, res, body) => {
+      t.ok(err, 'errored')
+      t.equal(res.statusCode, 413, 'too big')
+      t.equal(body.message, 'Payload size exceeds maximum body length', 'too big')
+      t.end()
+    })
+  })
+
+  t.test('invalid json', (t) => {
+    sendRequest('post', '/', 'wahoo []', {'content-type': 'application/json'}, (err, res, body) => {
+      t.ok(err, 'got error')
+      t.equal(res.statusCode, 400, 'invalid json')
+      t.equal(body.message, 'Payload is not valid JSON', 'not valid')
+      t.end()
+    })
+  })
+
+  t.test('teardown', (t) => {
+    server.close()
+    t.end()
+  })
+  t.end()
+})
+
+test('middleware fail', (t) => {
+  const server = five()
+  server.use((req, res, next) => next(new Error()))
+  server.get('/', (req, res) => res.err(500))
+  server.listen(3000)
+
+  t.test('middleware dies', (t) => {
+    sendRequest('get', '/', null, null, (err, res, body) => {
+      t.ok(err, 'error')
+      t.equal(res.statusCode, 500, 'internal error')
+      t.equal(body.message, 'Internal Server Error', 'internal')
+      t.end()
+    })
+  })
+  t.test('teardown', (t) => {
+    server.close()
+    t.end()
+  })
   t.end()
 })

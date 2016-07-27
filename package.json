@@ -4,7 +4,8 @@
   "description": "Very minimal JSON-REST server",
   "main": "take-five.js",
   "scripts": {
-    "test": "tap test/*.spec.js",
+    "dep": "dependency-check . && dependency-check . --unused --no-dev",
+    "test": "standard && npm run dep && tap test/*.spec.js",
     "coverage": "tap --cov --coverage-report lcov test/*.spec.js"
   },
   "repository": {
@@ -30,6 +31,8 @@
     "wayfarer": "^6.1.5"
   },
   "devDependencies": {
+    "dependency-check": "^2.6.0",
+    "standard": "^7.1.2",
     "tap": "^6.2.0"
   }
 }

@@ -47,7 +47,7 @@ module.exports = function (opts) {
 
   function addRoute (method, matcher, func) {
     if (!routers.has(method)) {
-      routers.set(method, wayfarer())
+      routers.set(method, wayfarer('/_'))
     }
     routers.get(method).on(matcher, (params, req, res) => {
       req.params = querystring.parse(req.url.split('?')[1])
