@@ -44,6 +44,8 @@ which they are added, which means they will be run after the built-in middleware
 
 * `middleware(request:object, response:object, next:function):function` -You must either call `next` or send data to the client when you are finshed.
 
+Since the middleware signature is the same express/restify, you *might* be able to use existing middleware with take-five, but ymmv.
+
 ### `Five#router(namespace:string):object`
 Namespace routes. All routes defined off this router will be prefixed with the supplied
 namespace.  The methods have the same signature as the router provided.
@@ -57,7 +59,7 @@ started. You can supply either a single function or an array of functions to cal
 The array will be traversed in the order it is supplied
 
 * `route:string` A [wayfarer](https://github.com/yoshuawuyts/wayfarer) route definition.
-* `handler(request:object, response:object):function`: The handler for this route.
+* `handler(request:object, response:object, next:function):function`: The handler for this route.
 
 Since this is an augmented instance of [http.Server](https://nodejs.org/api/http.html#http_class_http_server)
 all methods and properties are available on this as well.
@@ -79,5 +81,28 @@ calling `res.header`. The statusCode can be provided when calling the `send` met
 * `send(statusCode?:number, body?:(string|object)):function`: Send a response.
 * `err(statusCode?:number, message?:string):function`: Send an error. If no status code is provided it will default to a 500 error.  If no message is provided, it will use the default message for that status code. The message will be wrapped in a JSON object under the key `message`
 
-### License
+### `next:function`
+You must either send data down to the client (and `end` the request either though `send`, `err` or `end`) or call `next` to invoke the next function in the route list. If there is no function remaining in the stack, and you haven't send data to the client, the client will hang until the socket timeout occurs.
+
+## Do we need another REST server?
+Probably not, but [`restify`](http://restify.com), [`hapi`](http://hapijs.com) and [`express`](http://expressjs.com) are all over-kill on the types of services I'm building for the most part.
+* Setting up CORS is difficult or laborious: most REST services need to support CORS, this should be enabled by default (and easily configurable)
+* It has no need to accept anything other than `application/json` payloads, and doesn't need the cruft associated with other payload types.
+* By default it woill respond with `application/json` as well, but allow it be override-able if needed
+* Should be trivial to reject large payloads to prevent DOS attacks
+* Each route should have the ability to have multiple placeholders, regardless of the payload type
+* It should be as fast as possible
+
+I found that the other three projects aim to support way more than this, which means supporting these features involves jumping through hoops or installing a ton of
+various other packages.
+
+There are some scripts used for the (extremely reductive) benchmarking in `/benchmark`. Using my Core-i7, I get the following data using `wrk -t12 -c400 -d30s http://localhost:3000/test`. You might see different results. As with all benchmarks, these are likely indicative of nothing!
+
+```
+take-five: Requests/sec:  20296.63
+express: Requests/sec:  10974.18
+restify: Requests/sec:   9201.09
+```
+
+## License
 Copyright © 2016 Scripto LLC, Todd Kennedy. Reuse permitted under the Apache-2.0 license

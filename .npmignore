@@ -3,3 +3,4 @@ test
 .agignore
 .editorconfig
 .travis.yml
+benchmark
