@@ -61,10 +61,28 @@ test('take five', (t) => {
       server.get('/err', (req, res) => res.err('broken'))
       server.get('/err2', (req, res) => res.err(400, 'bad'))
       server.get('/err3', (req, res) => res.err(418))
+      server.get('/next', (req, res, next) => { res.statusCode = 204; next() })
+      server.get('/end', (req, res, next) => { res.statusCode = 418; res.end(); next() })
       const router = server.router('ns')
       router.get('/foo', (req, res) => res.send('{"message": "hello, world"}'))
     }, 'added routes')
     t.end()
+  })
+
+  t.test('ends response if no more paths', (t) => {
+    sendRequest('get', '/next', null, null, (err, res, body) => {
+      t.error(err, 'no error')
+      t.equal(res.statusCode, 204, 'no content')
+      t.end()
+    })
+  })
+
+  t.test('does not call end twice', (t) => {
+    sendRequest('get', '/end', null, null, (err, res, body) => {
+      t.ok(err, 'error')
+      t.equal(res.statusCode, 418, 'teapot')
+      t.end()
+    })
   })
 
   t.test('not found', (t) => {

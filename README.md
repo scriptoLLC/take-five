@@ -82,7 +82,8 @@ calling `res.header`. The statusCode can be provided when calling the `send` met
 * `err(statusCode?:number, message?:string):function`: Send an error. If no status code is provided it will default to a 500 error.  If no message is provided, it will use the default message for that status code. The message will be wrapped in a JSON object under the key `message`
 
 ### `next:function`
-You must either send data down to the client (and `end` the request either though `send`, `err` or `end`) or call `next` to invoke the next function in the route list. If there is no function remaining in the stack, and you haven't send data to the client, the client will hang until the socket timeout occurs.
+If you are done processing the request, but you want a later handler to be able to modify the response, call next.  This will invoke the next handler in the stack. If there are no more handlers left, it will call `res.end()` and send the response as is.  If you want to immediately send the response, you can call `res.end`, `res.send` or `res.err` directly.
+
 
 ## Do we need another REST server?
 Probably not, but [`restify`](http://restify.com), [`hapi`](http://hapijs.com) and [`express`](http://expressjs.com) are all over-kill on the types of services I'm building for the most part.
