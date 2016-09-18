@@ -34,9 +34,10 @@ Create and return a new HTTP server object.
 
 * `opts.maxPost?:number`: the max size for a payload. Default: 512kb
 * `opts.cors?:object`
-    * `opts.cors.headers?:array(string)`: an array of headers to accept besides the default. Default: `Content-Type`, `Accept`, `X-Requested_with`
+    * `opts.cors.headers?:array(string)`: an array of headers to accept besides the default. Default: `Content-Type`, `Accept`, `X-Requested-With`
     * `opts.cors.origin?:string`: What origin(s) are accepted. Deafult: `*`
     * `opts.cors.credentials?:boolean`: Allow or deny credentials. Default: `true`
+    * `opts.cores.methods?array(string)`: an array of methods to accept besides the default. Default: `PUT`, `POST`, `DELETE`, `GET`, `OPTIONS`
 
 ### `Five#use(middleware:function)`
 Add a new middleware to the stack.  Middleware will be processed in the order in
