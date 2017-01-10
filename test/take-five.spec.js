@@ -185,6 +185,14 @@ test('take five', (t) => {
     })
   })
 
+  t.test('put no content', (t) => {
+    const headers = {'content-length': 0, 'content-type': 'application/json'}
+    sendRequest('put', '/', undefined, headers, (err, res, body) => {
+      t.error(err)
+      t.end()
+    })
+  })
+
   t.test('put with url params', (t) => {
     const headers = {'content-type': 'application/json'}
     sendRequest('put', '/foobar', '{}', headers, (err, res, body) => {
