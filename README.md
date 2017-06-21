@@ -1,4 +1,6 @@
 # take-five
+
+[![Greenkeeper badge](https://badges.greenkeeper.io/scriptoLLC/take-five.svg)](https://greenkeeper.io/)
 [![Build Status](https://travis-ci.org/scriptoLLC/take-five.svg?branch=master)](https://travis-ci.org/scriptoLLC/take-five) [![NSP Status](https://nodesecurity.io/orgs/scriptollc/projects/24857fc4-2472-446e-ac2d-5a0f5913503d/badge)](https://nodesecurity.io/orgs/scriptollc/projects/24857fc4-2472-446e-ac2d-5a0f5913503d) [![Coverage Status](https://coveralls.io/repos/github/scriptoLLC/take-five/badge.svg?branch=master)](https://coveralls.io/github/scriptoLLC/take-five?branch=master)
 
 A minimal REST server that deals solely with JSON payloads that automatically
