@@ -27,7 +27,7 @@
   },
   "homepage": "https://github.com/scriptollc/take-five#readme",
   "dependencies": {
-    "fast-safe-stringify": "^1.0.9",
+    "fast-safe-stringify": "^2.0.0",
     "wayfarer": "^6.1.5"
   },
   "devDependencies": {
