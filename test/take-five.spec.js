@@ -1,82 +1,39 @@
-const http = require('http')
 const test = require('tap').test
-const stringify = require('fast-safe-stringify')
-const five = require('../')
+// const request = require('nanorequest')
+// const stringify = require('fast-safe-stringify')
+const TF = require('../')
 
-function sendRequest (method, path, body, headers, cb) {
-  if (typeof headers === 'function') {
-    cb = headers
-    headers = {}
-  }
-
-  const opts = {
-    hostname: 'localhost',
-    port: 3000,
-    path: path,
-    method: method,
-    headers
-  }
-
-  http.request(opts, (res) => {
-    const body = []
-    let err = false
-    if (res.statusCode > 299) {
-      err = true
-    }
-
-    if (res.statusCode === 204) {
-      return cb(null, res, '')
-    }
-
-    res.on('data', (chk) => body.push(chk.toString('utf8')))
-    res.on('end', () => {
-      let content
-      const isMultipart = opts.headers &&
-        opts.headers['content-type'] &&
-        /^multipart\/form-data/.test(opts.headers['content-type'])
-
-      if (isMultipart) {
-        content = body.join('')
-      } else {
-        try {
-          content = JSON.parse(body.join(''))
-        } catch (e) {
-          err = true
-          content = e
-        }
-      }
-
-      if (err) {
-        const error = new Error()
-        cb(error, res, content)
-      } else {
-        cb(null, res, content)
-      }
+test('http', (t) => {
+  t.plan(1)
+  const takeFive = new TF()
+  takeFive.server.on('error', (err) => console.log(err))
+  takeFive.listen(3000, () => {
+    t.test('adding routes', (t) => {
+      console.log('yooooooooooooooooooooooooooooooooooooooooooooooooo')
+      t.doesNotThrow(() => {
+        takeFive.get('/', (req, res, ctx) => ctx.send({hello: ['world']}))
+        takeFive.post('/', (req, res, ctx) => ctx.send(201, req.body))
+        takeFive.put('/:test', (req, res, ctx) => ctx.send(req.urlParams))
+        takeFive.delete('/:test', (req, res, ctx) => ctx.send(req.params))
+        takeFive.get('/err', (req, res, ctx) => ctx.err('broken'))
+        takeFive.get('/err2', (req, res, ctx) => ctx.err(400, 'bad'))
+        takeFive.get('/err3', (req, res, ctx) => ctx.err(418))
+        takeFive.get('/next', [
+          (req, res, ctx) => (res.statusCode = 202),
+          (req, res, ctx) => ctx.send({message: 'complete'})
+        ])
+        takeFive.get('/end', [
+          (req, res, ctx) => (res.statusCode = 418 && res.end()),
+          (req, res, ctx) => t.fail('should never get called')
+        ])
+      }, 'added routes')
+      takeFive.close()
+      t.end()
     })
-  }).end(body)
-}
-
-test('take five', (t) => {
-  const server = five()
-  server.on('error', (err) => console.log(err))
-  server.listen(3000)
-  t.test('adding routes', (t) => {
-    t.doesNotThrow(() => {
-      server.get('/', (req, res) => res.send({hello: ['world']}))
-      server.post('/', (req, res) => res.send(201, req.body))
-      server.put('/:test', (req, res) => res.send(req.urlParams))
-      server.delete('/:test', (req, res) => res.send(req.params))
-      server.get('/err', (req, res) => res.err('broken'))
-      server.get('/err2', (req, res) => res.err(400, 'bad'))
-      server.get('/err3', (req, res) => res.err(418))
-      server.get('/next', (req, res, next) => { res.statusCode = 204; next() })
-      server.get('/end', (req, res, next) => { res.statusCode = 418; res.end(); next() })
-      const router = server.router('ns')
-      router.get('/foo', (req, res) => res.send('{"message": "hello, world"}'))
-    }, 'added routes')
-    t.end()
   })
+})
 
+/*
   t.test('ends response if no more paths', (t) => {
     sendRequest('get', '/next', null, null, (err, res, body) => {
       t.error(err, 'no error')
@@ -354,3 +311,4 @@ test('multiple funcs on route', (t) => {
     res.send({message: 'yup'})
   }
 })
+*/
