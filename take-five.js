@@ -25,6 +25,7 @@ class TakeFive {
     this.allowHeaders = opts.allowHeaders || HEADERS
     this._httpLib = http
     this._httpOpts = opts.http || {}
+    this._ctx = {}
 
     if (this._httpOpts.key && this._httpOpts.cert && this._httpOpts.ca) {
       this._httpLib = https
@@ -41,12 +42,26 @@ class TakeFive {
     this._addRouters()
   }
 
+  set ctx (ctx) {
+    const ctxType = Object.prototype.toString.call(ctx)
+    if (ctxType !== '[object Object]') {
+      throw new Error(`ctx must be an object, was ${ctxType}`)
+    }
+    this._ctx = Object.assign({}, ctx)
+  }
+
+  get ctx () {
+    return this._ctx
+  }
+
   parseBody (req, res, ctx) {
-    try {
-      ctx.body = JSON.parse(ctx.body)
-      this._handleRequest(req, res, ctx)
-    } catch (err) {
-      return ctx.err(400, 'Payload is not valid JSON')
+    if (!res.finished) {
+      try {
+        ctx.body = JSON.parse(ctx.body)
+        this._handleRequest(req, res, ctx)
+      } catch (err) {
+        return ctx.err(400, 'Payload is not valid JSON')
+      }
     }
   }
 
@@ -82,7 +97,11 @@ class TakeFive {
       res.end(stringify({message: content}))
     }
 
-    return Object.assign({}, {send, err})
+    return Object.assign({}, this.ctx, {send, err})
+  }
+
+  handleError (err) {
+    console.log(err)
   }
 
   cors (res) {
@@ -118,28 +137,27 @@ class TakeFive {
     const type = req.headers['content-type']
     const size = req.headers['content-length']
 
-    if (type !== 'application/json') {
-      return ctx.err(415, `POST requests must be application/json not ${type}`)
-    }
-
     if (size > this.maxPost) {
       return ctx.err(413, `${size} exceeds maximum size for requests`)
     }
 
-    const parser = concat((data) => {
-      if (!res.finished) {
-        ctx.body = data
+    if (type !== 'application/json') {
+      return ctx.err(415, `POST requests must be application/json not ${type}`)
+    } else {
+      const parser = concat((data) => {
+        ctx.body = data.toString('utf8')
         this.parseBody(req, res, ctx)
-      }
-    })
-    req.pipe(parser)
+      })
+      req.pipe(parser)
 
-    const body = []
-    req.on('data', (chunk) => {
-      if (chunk.length > this.maxPost || Buffer.byteLength(body.join(''), 'utf8') > this.maxPost) {
-        return ctx.err(413, 'Payload size exceeds maxmium body length')
-      }
-    })
+      const body = []
+      req.on('data', (chunk) => {
+        body.push(chunk.toString('utf8'))
+        if (chunk.length > this.maxPost || Buffer.byteLength(body.join(''), 'utf8') > this.maxPost) {
+          return ctx.err(413, 'Payload size exceeds maxmium body length')
+        }
+      })
+    }
   }
 
   _onRequest (req, res) {
@@ -162,30 +180,58 @@ class TakeFive {
 
   _addRouters () {
     this.methods.forEach((method) => {
-      Object.defineProperty(this, method, {
-        value: (matcher, handler) => {
-          let router = this.routers.get(method)
-          if (!router) {
-            router = wayfarer('/_')
-            this.routers.set(method, router)
-          }
-
-          const handlers = Array.isArray(handler) ? handler : [handler]
-
-          if (handlers.some((f) => typeof f !== 'function')) {
-            throw new Error('handlers must be functions')
-          }
-
-          router.on(matcher, (params, req, res, ctx) => {
-            ctx.params = querystring.parse(req.url.split('?')[1])
-            ctx.urlParams = params
-            handlers.forEach((handler) => {
-              if (!res.finished) handler(req, res, ctx)
-            })
-          })
-        }
-      })
+      Object.defineProperty(this, method, {value: generateRouter(method)})
     })
+
+    function generateRouter (method) {
+      return function (matcher, handler) {
+        let router = this.routers.get(method)
+        if (!router) {
+          router = wayfarer('/_')
+          this.routers.set(method, router)
+        }
+
+        const handlers = Array.isArray(handler) ? handler : [handler]
+
+        if (handlers.some((f) => typeof f !== 'function')) {
+          throw new Error('handlers must be functions')
+        }
+
+        router.on(matcher, (params, req, res, ctx) => {
+          ctx.query = querystring.parse(req.url.split('?')[1])
+          ctx.params = params
+          this._resolveHandlers(req, res, ctx, handlers.slice(0))
+        })
+      }
+    }
+  }
+
+  _resolveHandlers (req, res, ctx, handlers) {
+    const next = handlers.shift()
+    iterate(next)
+
+    function iterate (handler) {
+      const done = (value) => {
+        if (value instanceof Error) {
+          return this.handleError(value)
+        }
+
+        if (!res.finished && handlers.length > 0) {
+          const next = handlers.shift()
+          iterate(next)
+        }
+      }
+      ctx.next = done
+
+      const handlerPromise = handler(req, res, ctx)
+      if (handlerPromise && typeof handlerPromise.then === 'function') {
+        handlerPromise
+          .then(done)
+          .catch((err) => {
+            this.handleError(err)
+          })
+      }
+    }
   }
 }
 
