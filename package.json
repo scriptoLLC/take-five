@@ -34,6 +34,7 @@
   "devDependencies": {
     "dependency-check": "^3.1.0",
     "nanorequest": "^1.1.0",
+    "selfsigned": "^1.10.2",
     "standard": "^11.0.1",
     "tap": "^11.1.3"
   }

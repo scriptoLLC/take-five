@@ -13,21 +13,40 @@ const dataMethods = ['put', 'post', 'patch']
 const MAX_POST = 512 * 1024
 const ORIGIN = '*'
 const CREDENTIALS = true
+const ALLOWED_TYPES = ['application/json']
 const HEADERS = ['Content-Type', 'Accept', 'X-Requested-With']
 
 class TakeFive {
   constructor (opts) {
+    this._allowMethods = ['options'].concat(methods)
+    this._allowHeaders = HEADERS.slice(0)
+    this._allowContentTypes = ALLOWED_TYPES.slice(0)
+    this._parsers = {
+      'application/json': JSON.parse
+    }
+
     opts = opts || {}
     this.maxPost = opts.maxPost || MAX_POST
+    this.allowedContentTypes = opts.allowContentTypes
     this.allowOrigin = opts.allowOrigin || ORIGIN
-    this.allowCredentials = opts.allowCredentials || CREDENTIALS
-    this.allowMethods = opts.allowMethods || methods
-    this.allowHeaders = opts.allowHeaders || HEADERS
+    this.allowCredentials = CREDENTIALS
+    if (typeof opts.allowCredentials === 'boolean') {
+      this.allowCredentials = opts.allowCredentials
+    }
+
+    if (opts.allowHeaders) {
+      this.allowHeaders = opts.allowHeaders
+    }
+
+    if (opts.allowMethods) {
+      this.allowMethods = opts.allowMethods
+    }
+
     this._httpLib = http
     this._httpOpts = opts.http || {}
     this._ctx = {}
 
-    if (this._httpOpts.key && this._httpOpts.cert && this._httpOpts.ca) {
+    if (this._httpOpts.key && this._httpOpts.cert) {
       this._httpLib = https
     }
 
@@ -42,6 +61,41 @@ class TakeFive {
     this._addRouters()
   }
 
+  set allowContentTypes (types) {
+    if (!Array.isArray(types)) {
+      types = [types]
+    }
+    this._allowContentTypes = this._allowContentTypes.concat(types)
+  }
+
+  get allowContentTypes () {
+    return this._allowContentTypes
+  }
+
+  addParser (type, func) {
+    if (typeof type === 'string' && typeof func === 'function') {
+      this._parsers[type] = func
+    }
+  }
+
+  set allowHeaders (headers) {
+    headers = Array.isArray(headers) ? headers : [headers]
+    this._allowHeaders = this._allowHeaders.concat(headers)
+  }
+
+  get allowHeaders () {
+    return this._allowHeaders
+  }
+
+  set allowMethods (methods) {
+    methods = Array.isArray(methods) ? methods : [methods]
+    this._allowMethods = this._allowMethods.concat(methods)
+  }
+
+  get allowMethods () {
+    return this._allowMethods
+  }
+
   set ctx (ctx) {
     const ctxType = Object.prototype.toString.call(ctx)
     if (ctxType !== '[object Object]') {
@@ -54,15 +108,12 @@ class TakeFive {
     return this._ctx
   }
 
-  parseBody (req, res, ctx) {
-    if (!res.finished) {
-      try {
-        ctx.body = JSON.parse(ctx.body)
-        this._handleRequest(req, res, ctx)
-      } catch (err) {
-        return ctx.err(400, 'Payload is not valid JSON')
-      }
+  parseBody (data, type) {
+    const parser = this._parsers[type]
+    if (typeof parser === 'function') {
+      return parser(data)
     }
+    return data
   }
 
   makeCtx (res) {
@@ -100,13 +151,12 @@ class TakeFive {
     return Object.assign({}, this.ctx, {send, err})
   }
 
-  handleError (err) {
-    console.log(err)
+  handleError (err, req, res, ctx) { // eslint-disable-line
   }
 
   cors (res) {
     res.setHeader('Access-Control-Allow-Origin', this.allowOrigin)
-    res.setHeader('Access-Control-Allow-Headers', this.allowHeaders.join(',').toUpperCase())
+    res.setHeader('Access-Control-Allow-Headers', this.allowHeaders.join(','))
     res.setHeader('Access-Control-Allow-Credentials', this.allowCredentials)
     res.setHeader('Access-Control-Allow-Methods', this.allowMethods.join(',').toUpperCase())
   }
@@ -119,7 +169,58 @@ class TakeFive {
     this.server.close()
   }
 
-  _handleRequest (req, res, ctx) {
+  _verifyBody (req, res, ctx) {
+    return new Promise((resolve) => {
+      const type = req.headers['content-type']
+      const size = req.headers['content-length']
+      const _ctxMax = parseInt(ctx.maxPost, 10)
+      const maxPost = Number.isNaN(_ctxMax) ? this.maxPost : _ctxMax
+
+      let allowContentTypes = this.allowContentTypes.slice(0)
+      if (ctx.allowContentTypes) {
+        allowContentTypes = allowContentTypes.concat(ctx.allowContentTypes)
+      }
+
+      if (size > maxPost) {
+        return ctx.err(413, `Payload size exceeds maximum size for requests`)
+      }
+
+      if (!allowContentTypes.includes(type)) {
+        return ctx.err(415, `Expected data to be of ${allowContentTypes.join(', ')} not ${type}`)
+      } else {
+        const parser = concat((data) => {
+          try {
+            ctx.body = this.parseBody(data.toString('utf8'), type)
+          } catch (err) {
+            return ctx.err(400, `Payload is not valid ${type}`)
+          }
+          resolve()
+        })
+
+        req.pipe(parser)
+
+        const body = []
+        req.on('data', (chunk) => {
+          body.push(chunk.toString('utf8'))
+          if (chunk.length > this.maxPost || Buffer.byteLength(body.join(''), 'utf8') > this.maxPost) {
+            req.pause()
+            return ctx.err(413, 'Payload size exceeds maximum body length')
+          }
+        })
+      }
+    })
+  }
+
+  _onRequest (req, res) {
+    this.cors(res)
+
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204
+      return res.end()
+    }
+
+    const ctx = this.makeCtx(res)
+
     try {
       const method = req.method.toLowerCase()
       const url = req.url.split('?')[0]
@@ -133,58 +234,13 @@ class TakeFive {
     }
   }
 
-  _verifyBody (req, res, ctx) {
-    const type = req.headers['content-type']
-    const size = req.headers['content-length']
-
-    if (size > this.maxPost) {
-      return ctx.err(413, `${size} exceeds maximum size for requests`)
-    }
-
-    if (type !== 'application/json') {
-      return ctx.err(415, `POST requests must be application/json not ${type}`)
-    } else {
-      const parser = concat((data) => {
-        ctx.body = data.toString('utf8')
-        this.parseBody(req, res, ctx)
-      })
-      req.pipe(parser)
-
-      const body = []
-      req.on('data', (chunk) => {
-        body.push(chunk.toString('utf8'))
-        if (chunk.length > this.maxPost || Buffer.byteLength(body.join(''), 'utf8') > this.maxPost) {
-          return ctx.err(413, 'Payload size exceeds maxmium body length')
-        }
-      })
-    }
-  }
-
-  _onRequest (req, res) {
-    this.cors(res)
-
-    if (req.method === 'OPTIONS') {
-      res.statusCode = 203
-      return res.end()
-    }
-
-    const ctx = this.makeCtx(res)
-    const conlen = parseInt(req.headers['content-length'], 10) || 0
-
-    if (conlen !== 0 && dataMethods.includes(req.method.toLowerCase())) {
-      this._verifyBody(req, res, ctx)
-    } else {
-      this._handleRequest(req, res, ctx)
-    }
-  }
-
   _addRouters () {
     this.methods.forEach((method) => {
       Object.defineProperty(this, method, {value: generateRouter(method)})
     })
 
     function generateRouter (method) {
-      return function (matcher, handler) {
+      return function (matcher, handler, ctxOpts) {
         let router = this.routers.get(method)
         if (!router) {
           router = wayfarer('/_')
@@ -198,9 +254,17 @@ class TakeFive {
         }
 
         router.on(matcher, (params, req, res, ctx) => {
+          const routeHandlers = handlers.slice(0)
+
+          const conlen = parseInt(req.headers['content-length'], 10) || 0
+          if (conlen !== 0 && dataMethods.includes(req.method.toLowerCase())) {
+            if (ctxOpts) ctx = Object.assign({}, ctx, ctxOpts)
+            routeHandlers.unshift(this._verifyBody.bind(this))
+          }
+
           ctx.query = querystring.parse(req.url.split('?')[1])
           ctx.params = params
-          this._resolveHandlers(req, res, ctx, handlers.slice(0))
+          this._resolveHandlers(req, res, ctx, routeHandlers)
         })
       }
     }
@@ -211,26 +275,16 @@ class TakeFive {
     iterate(next)
 
     function iterate (handler) {
-      const done = (value) => {
-        if (value instanceof Error) {
-          return this.handleError(value)
-        }
-
-        if (!res.finished && handlers.length > 0) {
-          const next = handlers.shift()
-          iterate(next)
-        }
-      }
-      ctx.next = done
-
-      const handlerPromise = handler(req, res, ctx)
-      if (handlerPromise && typeof handlerPromise.then === 'function') {
-        handlerPromise
-          .then(done)
-          .catch((err) => {
-            this.handleError(err)
-          })
-      }
+      handler(req, res, ctx)
+        .then(() => {
+          if (!res.finished && handlers.length > 0) {
+            const next = handlers.shift()
+            iterate(next)
+          }
+        })
+        .catch((err) => {
+          this.handleError(err, req, res, ctx)
+        })
     }
   }
 }

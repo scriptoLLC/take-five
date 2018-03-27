@@ -1,41 +1,50 @@
+const stream = require('stream')
+
 const test = require('tap').test
 const request = require('nanorequest')
-// const stringify = require('fast-safe-stringify')
+const selfsigned = require('selfsigned')
+
 const TF = require('../')
+
+function toJSON (data) {
+  const [key, val] = data.split('=')
+  return {[key]: val}
+}
 
 test('http', (t) => {
   const takeFive = new TF()
   takeFive.server.on('error', (err) => console.log(err))
   takeFive.listen(3000)
+  takeFive.addParser('application/x-www-form-urlencoded', toJSON)
 
   t.test('adding routes', (t) => {
     t.doesNotThrow(() => {
-      takeFive.get('/', (req, res, ctx) => ctx.send({hello: ['world']}))
-      takeFive.post('/', (req, res, ctx) => ctx.send(201, ctx.body))
-      takeFive.put('/:test', (req, res, ctx) => ctx.send(ctx.params))
-      takeFive.delete('/:test', (req, res, ctx) => ctx.send(ctx.query))
-      takeFive.get('/err', (req, res, ctx) => ctx.err('broken'))
-      takeFive.get('/err2', (req, res, ctx) => ctx.err(400, 'bad'))
-      takeFive.get('/err3', (req, res, ctx) => ctx.err(418))
+      takeFive.get('/', async (req, res, ctx) => ctx.send({hello: ['world']}))
+      takeFive.post('/', async (req, res, ctx) => ctx.send(201, ctx.body))
+      takeFive.put('/:test', async (req, res, ctx) => ctx.send(ctx.params))
+      takeFive.delete('/:test', async (req, res, ctx) => ctx.send(ctx.query))
+      takeFive.get('/err', async (req, res, ctx) => ctx.err('broken'))
+      takeFive.get('/err2', async (req, res, ctx) => ctx.err(400, 'bad'))
+      takeFive.get('/err3', async (req, res, ctx) => ctx.err(418))
+      takeFive.post('/urlencoded', async (req, res, ctx) => ctx.send(201, ctx.body), {allowContentTypes: ['application/x-www-form-urlencoded']})
+      takeFive.post('/zero', async (req, res, ctx) => {}, {maxPost: 0})
       takeFive.get('/next', [
-        (req, res, ctx) => {
+        async (req, res, ctx) => {
           res.statusCode = 202
           res.setHeader('content-type', 'application/json')
-          ctx.next('1')
+          return 1
         },
-        (req, res, ctx) => {
-          return new Promise((resolve) => {
-            res.end('{"message": "complete"}')
-            resolve('2')
-          })
+        async (req, res, ctx) => {
+          res.end('{"message": "complete"}')
+          return 2
         }
       ])
       takeFive.get('/end', [
-        (req, res, ctx) => {
+        async (req, res, ctx) => {
           res.statusCode = 418
           res.end()
         },
-        (req, res, ctx) => t.fail('should never get called')
+        async (req, res, ctx) => t.fail('should never get called')
       ])
     }, 'added routes')
     t.end()
@@ -148,14 +157,32 @@ test('http', (t) => {
 
   t.test('post not-json', (t) => {
     const opts = {
-      url: 'http://localhost:3000/err3',
+      url: 'http://localhost:3000/',
       method: 'post',
       body: 'foo=bar'
     }
     request(opts, (err, res, body) => {
       t.ok(err, 'error')
       t.equal(res.statusCode, 415, 'content not allowed')
-      t.equal(body.message, 'POST requests must be application/json not undefined', 'no match')
+      t.equal(body.message, 'Expected data to be of application/json not undefined', 'no match')
+      t.end()
+    })
+  })
+
+  t.test('post non-json with custom parser', (t) => {
+    const opts = {
+      url: 'http://localhost:3000/urlencoded',
+      method: 'post',
+      body: 'foo=bar',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded'
+      }
+    }
+
+    request(opts, (err, res, body) => {
+      t.error(err, 'no error')
+      t.equal(res.statusCode, 201, 'got a 201')
+      t.deepEqual(body, {foo: 'bar'}, 'matches')
       t.end()
     })
   })
@@ -173,7 +200,25 @@ test('http', (t) => {
     request(opts, (err, res, body) => {
       t.ok(err, 'error')
       t.equal(res.statusCode, 413, 'too large')
-      t.equal(body.message, `${512 * 2048} exceeds maximum size for requests`, 'too large')
+      t.equal(body.message, `Payload size exceeds maximum size for requests`, 'too large')
+      t.end()
+    })
+  })
+
+  t.test('post too large with header and custom size per route', (t) => {
+    const opts = {
+      method: 'post',
+      url: 'http://localhost:3000/zero',
+      body: '',
+      headers: {
+        'content-length': 1,
+        'content-type': 'application/json'
+      }
+    }
+    request(opts, (err, res, body) => {
+      t.ok(err, 'error')
+      t.equal(res.statusCode, 413, 'too large')
+      t.equal(body.message, `Payload size exceeds maximum size for requests`, 'too large')
       t.end()
     })
   })
@@ -229,38 +274,152 @@ test('http', (t) => {
   t.end()
 })
 
-test('cors', {skip: true}, (t) => {
-  const server = TF({cors: {
-    headers: ['X-Foo'],
-    origin: 'localhost',
-    credentials: false
-  }})
-  server.listen(3000)
-  server.get('/', (req, res) => {
-    res.writeHead(200)
-    res.send({message: true})
+test('cors', (t) => {
+  t.test('options', (t) => {
+    const opts = {
+      allowMethods: 'PROPFIND',
+      allowHeaders: 'X-Bar'
+    }
+    const five = new TF(opts)
+    t.deepEqual(five.allowMethods, ['options', 'get', 'put', 'post', 'delete', 'patch', 'PROPFIND'], 'methods')
+    t.deepEqual(five.allowHeaders, ['Content-Type', 'Accept', 'X-Requested-With', 'X-Bar'], 'headers')
+    t.end()
   })
 
-  t.test('preflight', (t) => {
-    request('options', '/', null, null, (err, res, body) => {
+  t.test('full run', (t) => {
+    t.plan(12)
+    const opts = {
+      allowMethods: ['PROPFIND'],
+      allowHeaders: ['X-Foo'],
+      allowOrigin: 'localhost',
+      allowCredentials: false
+    }
+    const server = new TF(opts)
+
+    server.get('/', async (req, res, ctx) => {
+      ctx.send({message: true})
+    })
+
+    server.listen(3000)
+
+    const opts1 = {
+      url: 'http://localhost:3000/',
+      method: 'options'
+    }
+    request(opts1, (err, res, body) => {
       t.error(err, 'no error')
       t.equal(res.statusCode, 204, 'no content')
       t.equal(res.headers['access-control-allow-origin'], 'localhost', 'acao')
       t.equal(res.headers['access-control-allow-credentials'], 'false', 'acac')
       t.equal(res.headers['access-control-allow-headers'], 'Content-Type,Accept,X-Requested-With,X-Foo', 'acah')
-      t.equal(res.headers['access-control-allow-methods'], 'PUT,POST,DELETE,GET,OPTIONS', 'acam')
-      t.end()
+      t.equal(res.headers['access-control-allow-methods'], 'OPTIONS,GET,PUT,POST,DELETE,PATCH,PROPFIND', 'acam')
     })
-  })
 
-  t.test('get', (t) => {
-    request('get', '/', null, null, (err, res, body) => {
+    const opts2 = {
+      url: 'http://localhost:3000'
+    }
+    request(opts2, (err, res, body) => {
       t.error(err, 'no error')
       t.equal(res.statusCode, 200, 'no content')
       t.equal(res.headers['access-control-allow-origin'], 'localhost', 'acao')
       t.equal(res.headers['access-control-allow-credentials'], 'false', 'acac')
       t.equal(res.headers['access-control-allow-headers'], 'Content-Type,Accept,X-Requested-With,X-Foo', 'acah')
-      t.equal(res.headers['access-control-allow-methods'], 'PUT,POST,DELETE,GET,OPTIONS', 'acam')
+      t.equal(res.headers['access-control-allow-methods'], 'OPTIONS,GET,PUT,POST,DELETE,PATCH,PROPFIND', 'acam')
+      server.close()
+    })
+  })
+
+  t.end()
+})
+
+test('large streams', (t) => {
+  const opts = {
+    maxPost: 100
+  }
+  const server = new TF(opts)
+
+  class Request extends stream.Readable {
+    constructor () {
+      super()
+      this.max = 101
+      this.i = 0
+    }
+
+    _read () {
+      if (this.i < this.max) {
+        this.push('a')
+      } else {
+        this.push(null)
+      }
+    }
+  }
+
+  const req = new Request()
+  req.headers = {
+    'content-type': 'application/json',
+    'content-length': 1
+  }
+
+  const ctx = {
+    err (code, msg) {
+      t.equal(code, 413, 'too big')
+      t.equal(msg, 'Payload size exceeds maximum body length')
+      t.end()
+    }
+  }
+
+  server._verifyBody(req, {}, ctx)
+})
+
+test('large chunks', (t) => {
+  const opts = {
+    maxPost: 100
+  }
+  const server = new TF(opts)
+
+  class Request extends stream.Readable {
+    _read () {
+      this.push('a'.repeat(200))
+    }
+  }
+
+  const req = new Request()
+  req.headers = {
+    'content-type': 'application/json',
+    'content-length': 1
+  }
+
+  const ctx = {
+    err (code, msg) {
+      t.equal(code, 413, 'too big')
+      t.equal(msg, 'Payload size exceeds maximum body length')
+      t.end()
+    }
+  }
+
+  server._verifyBody(req, {}, ctx)
+})
+
+test('body parser', (t) => {
+  const opts = {
+    maxPost: 100
+  }
+  const server = new TF(opts)
+  server.listen(3000)
+  server.post('/', async (req, res, ctx) => ctx.send(req.body))
+
+  t.test('invalid json', (t) => {
+    const opts = {
+      method: 'post',
+      url: 'http://localhost:3000/',
+      body: 'wahoo []',
+      headers: {'content-type': 'application/json'}
+    }
+
+    request(opts, (err, res, body) => {
+      t.ok(err, 'got error')
+      t.equal(res.statusCode, 400, 'invalid json')
+      t.equal(body.message, 'Payload is not valid application/json', 'not valid')
       t.end()
     })
   })
@@ -272,36 +431,77 @@ test('cors', {skip: true}, (t) => {
   t.end()
 })
 
-test('body parser', {skip: true}, (t) => {
-  const server = TF({maxPost: 100})
-  server.listen(3000)
-  server.post('/', (req, res) => res.send(req.body))
+test('https', (t) => {
+  const certOpts = {
+    days: 1,
+    algorithm: 'sha256',
+    extensions: [
+      {
+        name: 'subjectAltName',
+        altNames: [
+          {
+            type: 2,
+            value: 'localhost'
+          }
+        ]
+      }
+    ]
+  }
+  const keys = selfsigned.generate([{name: 'commonName', value: 'localhost'}], certOpts)
+  const opts = {
+    http: {
+      key: keys.private,
+      cert: keys.cert
+    }
+  }
+  const five = new TF(opts)
+  t.equal(five._httpLib.globalAgent.protocol, 'https:', 'is https server')
+  t.end()
+})
 
-  // can't seem to override content-length to report a false value in either
-  // curl or the built-in http client. will have to do something with `net`
-  // likely...
-  t.test('too big', {skip: true}, (t) => {
-    const big = 'a'.repeat(200)
-    request('post', '/', big, {'content-type': 'application/json', 'content-length': 1}, (err, res, body) => {
-      t.ok(err, 'errored')
-      t.equal(res.statusCode, 413, 'too big')
-      t.equal(body.message, 'Payload size exceeds maximum body length', 'too big')
+test('changing ctx', (t) => {
+  t.test('good', (t) => {
+    const five = new TF()
+    five.ctx = {
+      foo: 'bar',
+      err: false
+    }
+
+    five.get('/', async (req, res, ctx) => {
+      t.equal(ctx.foo, 'bar', 'has bar')
+      t.ok(typeof ctx.err === 'function', 'err still function')
+      t.deepEqual(Object.keys(ctx), ['foo', 'err', 'send', 'query', 'params'], 'got keys')
+      ctx.send({ok: true})
+    })
+
+    five.listen(3000)
+
+    const opts = {
+      url: 'http://localhost:3000/'
+    }
+
+    request(opts, (err, res, body) => {
+      t.error(err, 'no error')
+      five.close()
       t.end()
     })
   })
 
-  t.test('invalid json', (t) => {
-    request('post', '/', 'wahoo []', {'content-type': 'application/json'}, (err, res, body) => {
-      t.ok(err, 'got error')
-      t.equal(res.statusCode, 400, 'invalid json')
-      t.equal(body.message, 'Payload is not valid JSON', 'not valid')
-      t.end()
+  t.test('bar', (t) => {
+    const five = new TF()
+    t.throws(() => {
+      five.ctx = 'beep'
     })
-  })
-
-  t.test('teardown', (t) => {
-    server.close()
     t.end()
+  })
+
+  t.end()
+})
+
+test('functions only', (t) => {
+  const five = new TF()
+  t.throws(() => {
+    five.get('/', 'bar')
   })
   t.end()
 })
