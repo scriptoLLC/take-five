@@ -133,7 +133,7 @@ test('take five', (t) => {
     sendRequest('get', '/err3', null, null, (err, res, body) => {
       t.ok(err, 'error')
       t.equal(res.statusCode, 418, 'teapot')
-      t.equal(body.message, 'I\'m a teapot', 'short and stout')
+      t.ok(/teapot/i.test(body.message), 'short and stout')
       t.end()
     })
   })

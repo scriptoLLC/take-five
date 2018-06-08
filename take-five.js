@@ -32,7 +32,7 @@ module.exports = function (opts) {
     const router = {}
     methods.forEach(m => {
       router[m] = (matcher, func) => {
-        const nsMatcher = path.join(ns, matcher)
+        const nsMatcher = path.posix.join(ns, matcher)
         addRoute(m, nsMatcher, func)
       }
     })
