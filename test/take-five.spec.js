@@ -31,11 +31,19 @@ function sendRequest (method, path, body, headers, cb) {
     res.on('data', (chk) => body.push(chk.toString('utf8')))
     res.on('end', () => {
       let content
-      try {
-        content = JSON.parse(body.join(''))
-      } catch (e) {
-        err = true
-        content = e
+      const isMultipart = opts.headers &&
+        opts.headers['content-type'] &&
+        /^multipart\/form-data/.test(opts.headers['content-type'])
+
+      if (isMultipart) {
+        content = body.join('')
+      } else {
+        try {
+          content = JSON.parse(body.join(''))
+        } catch (e) {
+          err = true
+          content = e
+        }
       }
 
       if (err) {
@@ -162,6 +170,15 @@ test('take five', (t) => {
       t.ok(err, 'error')
       t.equal(res.statusCode, 413, 'too large')
       t.equal(body.message, `${512 * 2048} exceeds maximum size for requests`, 'too large')
+      t.end()
+    })
+  })
+
+  t.test('post multipart', (t) => {
+    const headers = {'content-type': 'multipart/form-data'}
+    sendRequest('post', '/', 'data goes here', headers, (err, res, body) => {
+      t.error(err, 'no error')
+      t.equal(res.statusCode, 201, 'is fine')
       t.end()
     })
   })
