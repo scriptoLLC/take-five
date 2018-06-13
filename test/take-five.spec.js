@@ -178,7 +178,7 @@ test('take five', (t) => {
     const headers = {'content-type': 'multipart/form-data'}
     sendRequest('post', '/', 'data goes here', headers, (err, res, body) => {
       t.error(err, 'no error')
-      t.equal(res.statusCode, 201, 'is fine')
+      t.equal(res.statusCode, 200, 'is fine')
       t.end()
     })
   })
