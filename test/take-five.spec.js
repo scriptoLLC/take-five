@@ -19,32 +19,38 @@ test('http', (t) => {
 
   t.test('adding routes', (t) => {
     t.doesNotThrow(() => {
-      takeFive.get('/', async (req, res, ctx) => ctx.send({hello: ['world']}))
-      takeFive.post('/', async (req, res, ctx) => ctx.send(201, ctx.body))
-      takeFive.put('/:test', async (req, res, ctx) => ctx.send(ctx.params))
-      takeFive.delete('/:test', async (req, res, ctx) => ctx.send(ctx.query))
-      takeFive.get('/err', async (req, res, ctx) => ctx.err('broken'))
-      takeFive.get('/err2', async (req, res, ctx) => ctx.err(400, 'bad'))
-      takeFive.get('/err3', async (req, res, ctx) => ctx.err(418))
-      takeFive.post('/urlencoded', async (req, res, ctx) => ctx.send(201, ctx.body), {allowContentTypes: ['application/x-www-form-urlencoded']})
-      takeFive.post('/zero', async (req, res, ctx) => {}, {maxPost: 0})
+      takeFive.get('/', (req, res, ctx) => {
+        ctx.send({hello: ['world']})
+      })
+      takeFive.post('/', (req, res, ctx) => ctx.send(201, ctx.body))
+      takeFive.put('/:test', (req, res, ctx) => ctx.send(ctx.params))
+      takeFive.delete('/:test', (req, res, ctx) => ctx.send(ctx.query))
+      takeFive.get('/err', (req, res, ctx) => ctx.err('broken'))
+      takeFive.get('/err2', (req, res, ctx) => ctx.err(400, 'bad'))
+      takeFive.get('/err3', (req, res, ctx) => ctx.err(418))
+      takeFive.post('/urlencoded', (req, res, ctx) => ctx.send(201, ctx.body), {allowContentTypes: ['application/x-www-form-urlencoded']})
+      takeFive.post('/zero', (req, res, ctx) => {}, {maxPost: 0})
       takeFive.get('/next', [
-        async (req, res, ctx) => {
-          res.statusCode = 202
-          res.setHeader('content-type', 'application/json')
-          return 1
+        (req, res, ctx) => {
+          return new Promise((resolve) => {
+            res.statusCode = 202
+            res.setHeader('content-type', 'application/json')
+            resolve()
+          })
         },
-        async (req, res, ctx) => {
+        (req, res, ctx) => {
           res.end('{"message": "complete"}')
-          return 2
         }
       ])
       takeFive.get('/end', [
-        async (req, res, ctx) => {
-          res.statusCode = 418
-          res.end()
+        (req, res, ctx) => {
+          return new Promise((resolve) => {
+            res.statusCode = 418
+            res.end()
+            resolve()
+          })
         },
-        async (req, res, ctx) => t.fail('should never get called')
+        (req, res, ctx) => t.fail('should never get called')
       ])
     }, 'added routes')
     t.end()
@@ -296,7 +302,7 @@ test('cors', (t) => {
     }
     const server = new TF(opts)
 
-    server.get('/', async (req, res, ctx) => {
+    server.get('/', (req, res, ctx) => {
       ctx.send({message: true})
     })
 
@@ -406,7 +412,7 @@ test('body parser', (t) => {
   }
   const server = new TF(opts)
   server.listen(3000)
-  server.post('/', async (req, res, ctx) => ctx.send(req.body))
+  server.post('/', (req, res, ctx) => ctx.send(req.body))
 
   t.test('invalid json', (t) => {
     const opts = {
@@ -467,7 +473,7 @@ test('changing ctx', (t) => {
       err: false
     }
 
-    five.get('/', async (req, res, ctx) => {
+    five.get('/', (req, res, ctx) => {
       t.equal(ctx.foo, 'bar', 'has bar')
       t.ok(typeof ctx.err === 'function', 'err still function')
       t.deepEqual(Object.keys(ctx), ['foo', 'err', 'send', 'query', 'params'], 'got keys')

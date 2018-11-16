@@ -31,9 +31,37 @@ curl -X POST localhost:3000 -H 'content-type: application/json' -d '{"hello": "w
 ## Routing and route-handlers
 In lieu of pre-set middleware, routes handlers can be arrays of functions that will
 be iterated over asynchronously. To simplify handling of these handlers,
-it is expected that the handlers will return then-ables.  This means any promises
-library should work (including the built in one), as well as using the `async` function
-keyword.
+it is expected that the handlers will return then-ables, or terminate the response
+stream.  This means any promises library should work (including the built in one),
+as well as using the `async` function keyword.
+
+**If you do not return a then-able, handler processing will stop in that function**
+
+e.g.:
+
+```js
+function badSetContentHeader (req, res, ctx) {
+  res.setHeader('x-no-way', 'this is gonna do nothing')
+}
+
+function goodSetContentHeader (req, res, ctx) {
+  return new Promise((resolve) => {
+    res.setHeader('x-yes-way', 'this is gonna do everything!')
+    resolve()
+  })
+}
+
+function sendReply (req, res, ctx) {
+  ctx.send('beep!')
+}
+
+five.get('/nope', [badSetContentHeader, sendReply])
+five.get('/yup', [goodSetContentHeader, sendReply)
+```
+
+since `badSetContentHeader` doesn't return a `then-able`, take-five will not
+know that it needs to call the `sendReply` function in the handler list for the `/nope`
+route.
 
 If you have either closed the response stream, or `reject`ed the then-able returned
 from your route handler, the next route will not be called. In the case that you have

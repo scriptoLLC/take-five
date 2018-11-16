@@ -275,16 +275,18 @@ class TakeFive {
     iterate(next)
 
     function iterate (handler) {
-      handler(req, res, ctx)
-        .then(() => {
+      const p = handler(req, res, ctx)
+      if (p && typeof p.then === 'function') {
+        p.then(() => {
           if (!res.finished && handlers.length > 0) {
             const next = handlers.shift()
             iterate(next)
           }
         })
-        .catch((err) => {
-          this.handleError(err, req, res, ctx)
-        })
+          .catch((err) => {
+            this.handleError(err, req, res, ctx)
+          })
+      }
     }
   }
 }
