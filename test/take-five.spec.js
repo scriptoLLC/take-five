@@ -1,92 +1,83 @@
-const http = require('http')
+const stream = require('stream')
+
 const test = require('tap').test
-const stringify = require('fast-safe-stringify')
-const five = require('../')
+const request = require('nanorequest')
+const selfsigned = require('selfsigned')
 
-function sendRequest (method, path, body, headers, cb) {
-  if (typeof headers === 'function') {
-    cb = headers
-    headers = {}
-  }
+const TF = require('../')
 
-  const opts = {
-    hostname: 'localhost',
-    port: 3000,
-    path: path,
-    method: method,
-    headers
-  }
-
-  http.request(opts, (res) => {
-    const body = []
-    let err = false
-    if (res.statusCode > 299) {
-      err = true
-    }
-
-    if (res.statusCode === 204) {
-      return cb(null, res, '')
-    }
-
-    res.on('data', (chk) => body.push(chk.toString('utf8')))
-    res.on('end', () => {
-      let content
-      const isMultipart = opts.headers &&
-        opts.headers['content-type'] &&
-        /^multipart\/form-data/.test(opts.headers['content-type'])
-
-      if (isMultipart) {
-        content = body.join('')
-      } else {
-        try {
-          content = JSON.parse(body.join(''))
-        } catch (e) {
-          err = true
-          content = e
-        }
-      }
-
-      if (err) {
-        const error = new Error()
-        cb(error, res, content)
-      } else {
-        cb(null, res, content)
-      }
-    })
-  }).end(body)
+function toJSON (data) {
+  const [key, val] = data.split('=')
+  return {[key]: val}
 }
 
-test('take five', (t) => {
-  const server = five()
-  server.on('error', (err) => console.log(err))
-  server.listen(3000)
+test('http', (t) => {
+  const takeFive = new TF()
+  takeFive.server.on('error', (err) => console.log(err))
+  takeFive.listen(3000)
+  takeFive.addParser('application/x-www-form-urlencoded', toJSON)
+  takeFive.allowContentTypes = 'foo/bar'
+
   t.test('adding routes', (t) => {
     t.doesNotThrow(() => {
-      server.get('/', (req, res) => res.send({hello: ['world']}))
-      server.post('/', (req, res) => res.send(201, req.body))
-      server.put('/:test', (req, res) => res.send(req.urlParams))
-      server.delete('/:test', (req, res) => res.send(req.params))
-      server.get('/err', (req, res) => res.err('broken'))
-      server.get('/err2', (req, res) => res.err(400, 'bad'))
-      server.get('/err3', (req, res) => res.err(418))
-      server.get('/next', (req, res, next) => { res.statusCode = 204; next() })
-      server.get('/end', (req, res, next) => { res.statusCode = 418; res.end(); next() })
-      const router = server.router('ns')
-      router.get('/foo', (req, res) => res.send('{"message": "hello, world"}'))
+      takeFive.get('/', (req, res, ctx) => {
+        ctx.send({hello: ['world']})
+      })
+      takeFive.post('/', (req, res, ctx) => ctx.send(201, ctx.body))
+      takeFive.post('/foobar', (req, res, ctx) => ctx.send(201, ctx.body))
+      takeFive.put('/:test', (req, res, ctx) => ctx.send(ctx.params))
+      takeFive.delete('/:test', (req, res, ctx) => ctx.send(ctx.query))
+      takeFive.get('/err', (req, res, ctx) => ctx.err('broken'))
+      takeFive.get('/err2', (req, res, ctx) => ctx.err(400, 'bad'))
+      takeFive.get('/err3', (req, res, ctx) => ctx.err(418))
+      takeFive.get('/err4', (req, res, ctx) => new Promise((resolve, reject) => reject(new Error('foo'))))
+      takeFive.post('/urlencoded', (req, res, ctx) => ctx.send(201, ctx.body), {allowContentTypes: ['application/x-www-form-urlencoded']})
+      takeFive.post('/zero', (req, res, ctx) => {}, {maxPost: 0})
+      takeFive.get('/next', [
+        (req, res, ctx) => {
+          return new Promise((resolve) => {
+            res.statusCode = 202
+            res.setHeader('content-type', 'application/json')
+            resolve()
+          })
+        },
+        (req, res, ctx) => {
+          res.end('{"message": "complete"}')
+        }
+      ])
+      takeFive.get('/end', [
+        (req, res, ctx) => {
+          return new Promise((resolve) => {
+            res.statusCode = 418
+            res.end()
+            resolve()
+          })
+        },
+        (req, res, ctx) => t.fail('should never get called')
+      ])
     }, 'added routes')
     t.end()
   })
 
   t.test('ends response if no more paths', (t) => {
-    sendRequest('get', '/next', null, null, (err, res, body) => {
+    const opts = {
+      url: 'http://localhost:3000/next',
+      json: true
+    }
+
+    request(opts, (err, res, body) => {
       t.error(err, 'no error')
-      t.equal(res.statusCode, 204, 'no content')
+      t.equal(res.statusCode, 202, '202')
+      t.equal(body.message, 'complete', 'complete')
       t.end()
     })
   })
 
   t.test('does not call end twice', (t) => {
-    sendRequest('get', '/end', null, null, (err, res, body) => {
+    const opts = {
+      url: 'http://localhost:3000/end'
+    }
+    request(opts, (err, res, body) => {
       t.ok(err, 'error')
       t.equal(res.statusCode, 418, 'teapot')
       t.end()
@@ -94,16 +85,24 @@ test('take five', (t) => {
   })
 
   t.test('not found', (t) => {
-    sendRequest('get', '/bar/doo', null, null, (err, res, body) => {
+    const opts = {
+      url: 'http://localhost:3000/bar/doo'
+    }
+
+    request(opts, (err, res, body) => {
       t.ok(err, 'errored')
       t.equal(res.statusCode, 404, 'not found')
-      t.equal(body.message, 'Not Found', 'not found')
+      t.equal(body.message, 'Not found', 'not found')
       t.end()
     })
   })
 
   t.test('get json', (t) => {
-    sendRequest('get', '/', null, null, (err, res, body) => {
+    const opts = {
+      url: 'http://localhost:3000/'
+    }
+
+    request(opts, (err, res, body) => {
       t.error(err, 'no errors')
       t.equal(res.statusCode, 200, 'got a 200')
       t.deepEqual(body, {hello: ['world']}, 'hello, world')
@@ -111,16 +110,12 @@ test('take five', (t) => {
     })
   })
 
-  t.test('get namespace', (t) => {
-    sendRequest('get', '/ns/foo', null, null, (err, res, body) => {
-      t.error(err, 'no errors')
-      t.equal(body.message, 'hello, world', 'returned')
-      t.end()
-    })
-  })
-
   t.test('500 error', (t) => {
-    sendRequest('get', '/err', null, null, (err, res, body) => {
+    const opts = {
+      url: 'http://localhost:3000/err'
+    }
+
+    request(opts, (err, res, body) => {
       t.ok(err, 'errored')
       t.equal(res.statusCode, 500, 'default is 500')
       t.equal(body.message, 'broken', 'it is!')
@@ -129,7 +124,10 @@ test('take five', (t) => {
   })
 
   t.test('400 error', (t) => {
-    sendRequest('get', '/err2', null, null, (err, res, body) => {
+    const opts = {
+      url: 'http://localhost:3000/err2'
+    }
+    request(opts, (err, res, body) => {
       t.ok(err, 'errored')
       t.equal(res.statusCode, 400, 'bad content')
       t.equal(body.message, 'bad', 'bad dudes')
@@ -138,7 +136,10 @@ test('take five', (t) => {
   })
 
   t.test('418 error', (t) => {
-    sendRequest('get', '/err3', null, null, (err, res, body) => {
+    const opts = {
+      url: 'http://localhost:3000/err3'
+    }
+    request(opts, (err, res, body) => {
       t.ok(err, 'error')
       t.equal(res.statusCode, 418, 'teapot')
       t.ok(/teapot/i.test(body.message), 'short and stout')
@@ -146,8 +147,28 @@ test('take five', (t) => {
     })
   })
 
+  t.test('custom error handler not installed', (t) => {
+    const opts = {
+      url: 'http://localhost:3000/err4'
+    }
+    request(opts, (err, res, body) => {
+      t.ok(err, 'error')
+      t.equal(res.statusCode, 500, 'internal')
+      t.equal(body.message, 'Internal server error')
+      t.end()
+    })
+  })
+
   t.test('post json', (t) => {
-    sendRequest('post', '/', stringify({foo: 'bar'}), {'content-type': 'application/json'}, (err, res, body) => {
+    const opts = {
+      url: 'http://localhost:3000/',
+      method: 'post',
+      body: {foo: 'bar'},
+      headers: {
+        'content-type': 'application/json'
+      }
+    }
+    request(opts, (err, res, body) => {
       t.error(err, 'no errors')
       t.equal(res.statusCode, 201, 'got a 201')
       t.deepEqual(body, {foo: 'bar'}, 'matches')
@@ -156,63 +177,116 @@ test('take five', (t) => {
   })
 
   t.test('post not-json', (t) => {
-    sendRequest('post', '/', 'foo=bar', (err, res, body) => {
+    const opts = {
+      url: 'http://localhost:3000/',
+      method: 'post',
+      body: 'foo=bar'
+    }
+    request(opts, (err, res, body) => {
       t.ok(err, 'error')
       t.equal(res.statusCode, 415, 'content not allowed')
-      t.equal(body.message, 'POST requests must be application/json not undefined', 'no match')
+      t.equal(body.message, 'Expected data to be of application/json, foo/bar not undefined', 'no match')
+      t.end()
+    })
+  })
+
+  t.test('post global custom content type', (t) => {
+    const opts = {
+      url: 'http://localhost:3000/urlencoded',
+      method: 'post',
+      body: '"foo=bar"',
+      headers: {
+        'content-type': 'foo/bar'
+      }
+    }
+
+    request(opts, (err, res, body) => {
+      t.error(err, 'no error')
+      t.equal(res.statusCode, 201, 'got a 201')
+      t.deepEqual(body, 'foo=bar', 'matches')
+      t.end()
+    })
+  })
+
+  t.test('post non-json with custom parser', (t) => {
+    const opts = {
+      url: 'http://localhost:3000/urlencoded',
+      method: 'post',
+      body: 'foo=bar',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded'
+      }
+    }
+
+    request(opts, (err, res, body) => {
+      t.error(err, 'no error')
+      t.equal(res.statusCode, 201, 'got a 201')
+      t.deepEqual(body, {foo: 'bar'}, 'matches')
       t.end()
     })
   })
 
   t.test('post too large with header', (t) => {
-    const headers = {'content-length': 512 * 2048, 'content-type': 'application/json'}
-    sendRequest('post', '/', stringify({}), headers, (err, res, body) => {
+    const opts = {
+      method: 'post',
+      url: 'http://localhost:3000/',
+      body: '',
+      headers: {
+        'content-length': 512 * 2048,
+        'content-type': 'application/json'
+      }
+    }
+    request(opts, (err, res, body) => {
       t.ok(err, 'error')
       t.equal(res.statusCode, 413, 'too large')
-      t.equal(body.message, `${512 * 2048} exceeds maximum size for requests`, 'too large')
+      t.equal(body.message, `Payload size exceeds maximum size for requests`, 'too large')
       t.end()
     })
   })
 
-  t.test('post multipart', (t) => {
-    const headers = {'content-type': 'multipart/form-data'}
-    sendRequest('post', '/', 'data goes here', headers, (err, res, body) => {
-      t.error(err, 'no error')
-      t.equal(res.statusCode, 200, 'is fine')
-      t.end()
-    })
-  })
-
-  t.test('put not-json', (t) => {
-    sendRequest('put', '/', 'foo=bar', (err, res, body) => {
-      t.ok(err, 'error')
-      t.equal(res.statusCode, 415, 'content not allowed')
-      t.equal(body.message, 'POST requests must be application/json not undefined', 'no match')
-      t.end()
-    })
-  })
-
-  t.test('put too large with header', (t) => {
-    const headers = {'content-length': 512 * 2048, 'content-type': 'application/json'}
-    sendRequest('put', '/', stringify({}), headers, (err, res, body) => {
+  t.test('post too large with header and custom size per route', (t) => {
+    const opts = {
+      method: 'post',
+      url: 'http://localhost:3000/zero',
+      body: '',
+      headers: {
+        'content-length': 1,
+        'content-type': 'application/json'
+      }
+    }
+    request(opts, (err, res, body) => {
       t.ok(err, 'error')
       t.equal(res.statusCode, 413, 'too large')
-      t.equal(body.message, `${512 * 2048} exceeds maximum size for requests`, 'too large')
+      t.equal(body.message, `Payload size exceeds maximum size for requests`, 'too large')
       t.end()
     })
   })
 
   t.test('put no content', (t) => {
-    const headers = {'content-length': 0, 'content-type': 'application/json'}
-    sendRequest('put', '/', undefined, headers, (err, res, body) => {
+    const opts = {
+      url: 'http://localhost:3000/',
+      method: 'put',
+      headers: {
+        'content-length': 0,
+        'content-type': 'application/json'
+      }
+    }
+
+    request(opts, (err, res, body) => {
       t.error(err)
       t.end()
     })
   })
 
   t.test('put with url params', (t) => {
-    const headers = {'content-type': 'application/json'}
-    sendRequest('put', '/foobar', '{}', headers, (err, res, body) => {
+    const opts = {
+      method: 'put',
+      url: 'http://localhost:3000/foobar',
+      headers: {
+        'content-type': 'application/json'
+      }
+    }
+    request(opts, (err, res, body) => {
       t.error(err, 'no error')
       t.deepEqual(body, {test: 'foobar'}, 'params passed')
       t.end()
@@ -220,7 +294,11 @@ test('take five', (t) => {
   })
 
   t.test('delete with query params', (t) => {
-    sendRequest('delete', '/foobar?beep=boop', null, null, (err, res, body) => {
+    const opts = {
+      method: 'delete',
+      url: 'http://localhost:3000/foobar?beep=boop'
+    }
+    request(opts, (err, res, body) => {
       t.error(err, 'no error')
       t.deepEqual(body, {beep: 'boop'}, 'url parsed')
       t.end()
@@ -228,7 +306,7 @@ test('take five', (t) => {
   })
 
   t.test('teardown', (t) => {
-    server.close()
+    takeFive.close()
     t.end()
   })
 
@@ -236,71 +314,151 @@ test('take five', (t) => {
 })
 
 test('cors', (t) => {
-  const server = five({cors: {
-    headers: ['X-Foo'],
-    origin: 'localhost',
-    credentials: false
-  }})
-  server.listen(3000)
-  server.get('/', (req, res) => {
-    res.writeHead(200)
-    res.send({message: true})
+  t.test('options', (t) => {
+    const opts = {
+      allowMethods: 'PROPFIND',
+      allowHeaders: 'X-Bar'
+    }
+    const five = new TF(opts)
+    t.deepEqual(five.allowMethods, ['options', 'get', 'put', 'post', 'delete', 'patch', 'PROPFIND'], 'methods')
+    t.deepEqual(five.allowHeaders, ['Content-Type', 'Accept', 'X-Requested-With', 'X-Bar'], 'headers')
+    t.end()
   })
 
-  t.test('preflight', (t) => {
-    sendRequest('options', '/', null, null, (err, res, body) => {
+  t.test('full run', (t) => {
+    t.plan(12)
+    const opts = {
+      allowMethods: ['PROPFIND'],
+      allowHeaders: ['X-Foo'],
+      allowOrigin: 'localhost',
+      allowCredentials: false
+    }
+    const server = new TF(opts)
+
+    server.get('/', (req, res, ctx) => {
+      ctx.send({message: true})
+    })
+
+    server.listen(3000)
+
+    const opts1 = {
+      url: 'http://localhost:3000/',
+      method: 'options'
+    }
+    request(opts1, (err, res, body) => {
       t.error(err, 'no error')
       t.equal(res.statusCode, 204, 'no content')
       t.equal(res.headers['access-control-allow-origin'], 'localhost', 'acao')
       t.equal(res.headers['access-control-allow-credentials'], 'false', 'acac')
       t.equal(res.headers['access-control-allow-headers'], 'Content-Type,Accept,X-Requested-With,X-Foo', 'acah')
-      t.equal(res.headers['access-control-allow-methods'], 'PUT,POST,DELETE,GET,OPTIONS', 'acam')
-      t.end()
+      t.equal(res.headers['access-control-allow-methods'], 'OPTIONS,GET,PUT,POST,DELETE,PATCH,PROPFIND', 'acam')
     })
-  })
 
-  t.test('get', (t) => {
-    sendRequest('get', '/', null, null, (err, res, body) => {
+    const opts2 = {
+      url: 'http://localhost:3000'
+    }
+    request(opts2, (err, res, body) => {
       t.error(err, 'no error')
       t.equal(res.statusCode, 200, 'no content')
       t.equal(res.headers['access-control-allow-origin'], 'localhost', 'acao')
       t.equal(res.headers['access-control-allow-credentials'], 'false', 'acac')
       t.equal(res.headers['access-control-allow-headers'], 'Content-Type,Accept,X-Requested-With,X-Foo', 'acah')
-      t.equal(res.headers['access-control-allow-methods'], 'PUT,POST,DELETE,GET,OPTIONS', 'acam')
-      t.end()
+      t.equal(res.headers['access-control-allow-methods'], 'OPTIONS,GET,PUT,POST,DELETE,PATCH,PROPFIND', 'acam')
+      server.close()
     })
   })
 
-  t.test('teardown', (t) => {
-    server.close()
-    t.end()
-  })
   t.end()
+})
+
+test('large streams', (t) => {
+  const opts = {
+    maxPost: 100
+  }
+  const server = new TF(opts)
+
+  class Request extends stream.Readable {
+    constructor () {
+      super()
+      this.max = 101
+      this.i = 0
+    }
+
+    _read () {
+      if (this.i < this.max) {
+        this.push('a')
+      } else {
+        this.push(null)
+      }
+    }
+  }
+
+  const req = new Request()
+  req.headers = {
+    'content-type': 'application/json',
+    'content-length': 1
+  }
+
+  const ctx = {
+    err (code, msg) {
+      t.equal(code, 413, 'too big')
+      t.equal(msg, 'Payload size exceeds maximum body length')
+      t.end()
+    }
+  }
+
+  server._verifyBody(req, {}, ctx)
+})
+
+test('large chunks', (t) => {
+  const opts = {
+    maxPost: 100
+  }
+  const server = new TF(opts)
+
+  class Request extends stream.Readable {
+    _read () {
+      this.push('a'.repeat(200))
+    }
+  }
+
+  const req = new Request()
+  req.headers = {
+    'content-type': 'application/json',
+    'content-length': 1
+  }
+
+  const ctx = {
+    err (code, msg) {
+      t.equal(code, 413, 'too big')
+      t.equal(msg, 'Payload size exceeds maximum body length')
+      t.end()
+    }
+  }
+
+  server._verifyBody(req, {}, ctx)
 })
 
 test('body parser', (t) => {
-  const server = five({maxPost: 100})
+  const opts = {
+    maxPost: 100
+  }
+  const server = new TF(opts)
   server.listen(3000)
-  server.post('/', (req, res) => res.send(req.body))
-
-  // can't seem to override content-length to report a false value in either
-  // curl or the built-in http client. will have to do something with `net`
-  // likely...
-  t.test('too big', {skip: true}, (t) => {
-    const big = 'a'.repeat(200)
-    sendRequest('post', '/', big, {'content-type': 'application/json', 'content-length': 1}, (err, res, body) => {
-      t.ok(err, 'errored')
-      t.equal(res.statusCode, 413, 'too big')
-      t.equal(body.message, 'Payload size exceeds maximum body length', 'too big')
-      t.end()
-    })
-  })
+  server.post('/', (req, res, ctx) => ctx.send(req.body))
 
   t.test('invalid json', (t) => {
-    sendRequest('post', '/', 'wahoo []', {'content-type': 'application/json'}, (err, res, body) => {
+    const opts = {
+      method: 'post',
+      url: 'http://localhost:3000/',
+      body: 'wahoo []',
+      headers: {'content-type': 'application/json'}
+    }
+
+    request(opts, (err, res, body) => {
       t.ok(err, 'got error')
       t.equal(res.statusCode, 400, 'invalid json')
-      t.equal(body.message, 'Payload is not valid JSON', 'not valid')
+      t.equal(body.message, 'Payload is not valid application/json', 'not valid')
       t.end()
     })
   })
@@ -312,45 +470,104 @@ test('body parser', (t) => {
   t.end()
 })
 
-test('middleware fail', (t) => {
-  const server = five()
-  server.use((req, res, next) => next(new Error()))
-  server.get('/', (req, res) => res.err(500))
-  server.listen(3000)
-
-  t.test('middleware dies', (t) => {
-    sendRequest('get', '/', null, null, (err, res, body) => {
-      t.ok(err, 'error')
-      t.equal(res.statusCode, 500, 'internal error')
-      t.equal(body.message, 'Internal Server Error', 'internal')
-      t.end()
-    })
-  })
-  t.test('teardown', (t) => {
-    server.close()
-    t.end()
-  })
+test('https', (t) => {
+  const certOpts = {
+    days: 1,
+    algorithm: 'sha256',
+    extensions: [
+      {
+        name: 'subjectAltName',
+        altNames: [
+          {
+            type: 2,
+            value: 'localhost'
+          }
+        ]
+      }
+    ]
+  }
+  const keys = selfsigned.generate([{name: 'commonName', value: 'localhost'}], certOpts)
+  const opts = {
+    http: {
+      key: keys.private,
+      cert: keys.cert
+    }
+  }
+  const five = new TF(opts)
+  t.equal(five._httpLib.globalAgent.protocol, 'https:', 'is https server')
   t.end()
 })
 
-test('multiple funcs on route', (t) => {
-  const server = five()
-  server.get('/', [testOne, testTwo])
-  server.listen(3000)
-  sendRequest('get', '/', null, null, (err, res, body) => {
-    t.error(err, 'no errors')
-    t.equal(res.statusCode, 200, 'yup')
-    server.close()
+test('changing ctx', (t) => {
+  t.test('good', (t) => {
+    const five = new TF()
+    five.ctx = {
+      foo: 'bar',
+      err: false
+    }
+
+    five.get('/', (req, res, ctx) => {
+      t.equal(ctx.foo, 'bar', 'has bar')
+      t.ok(typeof ctx.err === 'function', 'err still function')
+      t.deepEqual(Object.keys(ctx), ['foo', 'err', 'send', 'query', 'params'], 'got keys')
+      ctx.send({ok: true})
+    })
+
+    five.listen(3000)
+
+    const opts = {
+      url: 'http://localhost:3000/'
+    }
+
+    request(opts, (err, res, body) => {
+      t.error(err, 'no error')
+      five.close()
+      t.end()
+    })
+  })
+
+  t.test('bar', (t) => {
+    const five = new TF()
+    t.throws(() => {
+      five.ctx = 'beep'
+    })
     t.end()
   })
 
-  function testOne (req, res, next) {
-    t.ok(true, 'called test function one')
-    next()
+  t.end()
+})
+
+test('custom error handler', (t) => {
+  const five = new TF()
+  five.handleError = function (err, req, res, ctx) { // eslint-disable-line
+    ctx.err(501, 'Not Implemented')
   }
 
-  function testTwo (req, res, next) {
-    t.ok(true, 'called test function two')
-    res.send({message: 'yup'})
+  five.get('/', (req, res, ctx) => {
+    return new Promise((resolve, reject) => {
+      reject(new Error('501!'))
+    })
+  })
+
+  five.listen(3000)
+
+  const opts = {
+    url: 'http://localhost:3000/'
   }
+
+  request(opts, (err, res, body) => {
+    t.ok(err, 'error!')
+    t.equal(res.statusCode, 501, 'not implemented')
+    t.equal(body.message, 'Not Implemented')
+    five.close()
+    t.end()
+  })
+})
+
+test('functions only', (t) => {
+  const five = new TF()
+  t.throws(() => {
+    five.get('/', 'bar')
+  })
+  t.end()
 })
