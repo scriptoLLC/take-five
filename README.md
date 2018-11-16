@@ -31,11 +31,11 @@ curl -X POST localhost:3000 -H 'content-type: application/json' -d '{"hello": "w
 ## Routing and route-handlers
 In lieu of pre-set middleware, routes handlers can be arrays of functions that will
 be iterated over asynchronously. To simplify handling of these handlers,
-it is expected that the handlers will return then-ables, or terminate the response
+it is expected that the handlers will return [thenables](https://promisesaplus.com/), or terminate the response
 stream.  This means any promises library should work (including the built in one),
 as well as using the `async` function keyword.
 
-**If you do not return a then-able, handler processing will stop in that function**
+**If you do not return a [thenable](https://promisesaplus.com/), handler processing will stop in that function**
 
 e.g.:
 
@@ -59,13 +59,13 @@ five.get('/nope', [badSetContentHeader, sendReply])
 five.get('/yup', [goodSetContentHeader, sendReply)
 ```
 
-since `badSetContentHeader` doesn't return a `then-able`, take-five will not
+since `badSetContentHeader` doesn't return a [`thenable`](https://promisesaplus.com/), take-five will not
 know that it needs to call the `sendReply` function in the handler list for the `/nope`
 route.
 
-If you have either closed the response stream, or `reject`ed the then-able returned
+If you have either closed the response stream, or `reject`ed the [thenable](https://promisesaplus.com/) returned
 from your route handler, the next route will not be called. In the case that you have
-`reject`ed the then-able, the error handler will be invoked as well. If you have
+`reject`ed the [thenable](https://promisesaplus.com/), the error handler will be invoked as well. If you have
 closed the response stream, the server assumes you were done processing the request
 and will just ignore the remaning functions in the queue.
 

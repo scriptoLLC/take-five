@@ -16,6 +16,7 @@ test('http', (t) => {
   takeFive.server.on('error', (err) => console.log(err))
   takeFive.listen(3000)
   takeFive.addParser('application/x-www-form-urlencoded', toJSON)
+  takeFive.allowContentTypes = 'foo/bar'
 
   t.test('adding routes', (t) => {
     t.doesNotThrow(() => {
@@ -23,11 +24,13 @@ test('http', (t) => {
         ctx.send({hello: ['world']})
       })
       takeFive.post('/', (req, res, ctx) => ctx.send(201, ctx.body))
+      takeFive.post('/foobar', (req, res, ctx) => ctx.send(201, ctx.body))
       takeFive.put('/:test', (req, res, ctx) => ctx.send(ctx.params))
       takeFive.delete('/:test', (req, res, ctx) => ctx.send(ctx.query))
       takeFive.get('/err', (req, res, ctx) => ctx.err('broken'))
       takeFive.get('/err2', (req, res, ctx) => ctx.err(400, 'bad'))
       takeFive.get('/err3', (req, res, ctx) => ctx.err(418))
+      takeFive.get('/err4', (req, res, ctx) => new Promise((resolve, reject) => reject(new Error('foo'))))
       takeFive.post('/urlencoded', (req, res, ctx) => ctx.send(201, ctx.body), {allowContentTypes: ['application/x-www-form-urlencoded']})
       takeFive.post('/zero', (req, res, ctx) => {}, {maxPost: 0})
       takeFive.get('/next', [
@@ -144,6 +147,18 @@ test('http', (t) => {
     })
   })
 
+  t.test('custom error handler not installed', (t) => {
+    const opts = {
+      url: 'http://localhost:3000/err4'
+    }
+    request(opts, (err, res, body) => {
+      t.ok(err, 'error')
+      t.equal(res.statusCode, 500, 'internal')
+      t.equal(body.message, 'Internal server error')
+      t.end()
+    })
+  })
+
   t.test('post json', (t) => {
     const opts = {
       url: 'http://localhost:3000/',
@@ -170,7 +185,25 @@ test('http', (t) => {
     request(opts, (err, res, body) => {
       t.ok(err, 'error')
       t.equal(res.statusCode, 415, 'content not allowed')
-      t.equal(body.message, 'Expected data to be of application/json not undefined', 'no match')
+      t.equal(body.message, 'Expected data to be of application/json, foo/bar not undefined', 'no match')
+      t.end()
+    })
+  })
+
+  t.test('post global custom content type', (t) => {
+    const opts = {
+      url: 'http://localhost:3000/urlencoded',
+      method: 'post',
+      body: '"foo=bar"',
+      headers: {
+        'content-type': 'foo/bar'
+      }
+    }
+
+    request(opts, (err, res, body) => {
+      t.error(err, 'no error')
+      t.equal(res.statusCode, 201, 'got a 201')
+      t.deepEqual(body, 'foo=bar', 'matches')
       t.end()
     })
   })
@@ -502,6 +535,33 @@ test('changing ctx', (t) => {
   })
 
   t.end()
+})
+
+test('custom error handler', (t) => {
+  const five = new TF()
+  five.handleError = function (err, req, res, ctx) { // eslint-disable-line
+    ctx.err(501, 'Not Implemented')
+  }
+
+  five.get('/', (req, res, ctx) => {
+    return new Promise((resolve, reject) => {
+      reject(new Error('501!'))
+    })
+  })
+
+  five.listen(3000)
+
+  const opts = {
+    url: 'http://localhost:3000/'
+  }
+
+  request(opts, (err, res, body) => {
+    t.ok(err, 'error!')
+    t.equal(res.statusCode, 501, 'not implemented')
+    t.equal(body.message, 'Not Implemented')
+    five.close()
+    t.end()
+  })
 })
 
 test('functions only', (t) => {

@@ -151,7 +151,14 @@ class TakeFive {
     return Object.assign({}, this.ctx, {send, err})
   }
 
-  handleError (err, req, res, ctx) { // eslint-disable-line
+  _handleError (err, req, res, ctx) {
+    if (typeof this.handleError === 'function') {
+      this.handleError(err, req, res, ctx)
+    }
+
+    if (!res.finished) {
+      ctx.err('Internal server error')
+    }
   }
 
   cors (res) {
@@ -271,10 +278,7 @@ class TakeFive {
   }
 
   _resolveHandlers (req, res, ctx, handlers) {
-    const next = handlers.shift()
-    iterate(next)
-
-    function iterate (handler) {
+    const iterate = (handler) => {
       const p = handler(req, res, ctx)
       if (p && typeof p.then === 'function') {
         p.then(() => {
@@ -284,10 +288,13 @@ class TakeFive {
           }
         })
           .catch((err) => {
-            this.handleError(err, req, res, ctx)
+            this._handleError(err, req, res, ctx)
           })
       }
     }
+
+    const next = handlers.shift()
+    iterate(next)
   }
 }
 
