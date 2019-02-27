@@ -1,9 +1,11 @@
 # take-five
 
-[![Build Status](https://travis-ci.org/scriptoLLC/take-five.svg?branch=master)](https://travis-ci.org/scriptoLLC/take-five) [![NSP Status](https://nodesecurity.io/orgs/scriptollc/projects/24857fc4-2472-446e-ac2d-5a0f5913503d/badge)](https://nodesecurity.io/orgs/scriptollc/projects/24857fc4-2472-446e-ac2d-5a0f5913503d) [![Coverage Status](https://coveralls.io/repos/github/scriptoLLC/take-five/badge.svg?branch=master)](https://coveralls.io/github/scriptoLLC/take-five?branch=master)
+[![Build Status](https://travis-ci.org/scriptoLLC/take-five.svg?branch=master)](https://travis-ci.org/scriptoLLC/take-five) [![Coverage Status](https://coveralls.io/repos/github/scriptoLLC/take-five/badge.svg?branch=master)](https://coveralls.io/github/scriptoLLC/take-five?branch=master)
 
-A minimal REST server that deals solely with JSON payloads that automatically
-handles CORS requests and limits the size of a POST bodies.
+A minimal REST server that deals solely with JSON payloads, automatically
+handles CORS requests, and limits the size of a POST bodies.
+
+For 1.x docs, see https://github.com/scriptoLLC/take-five/tree/v1.4.1
 
 ## Installation
 
@@ -29,6 +31,7 @@ curl -X POST localhost:3000 -H 'content-type: application/json' -d '{"hello": "w
 ```
 
 ## Routing and route-handlers
+
 In lieu of pre-set middleware, routes handlers can be arrays of functions that will
 be iterated over asynchronously. To simplify handling of these handlers,
 it is expected that the handlers will return [thenables](https://promisesaplus.com/), or terminate the response
@@ -76,6 +79,7 @@ hash when instatiating a new TakeFive prototype.
 ### Examples
 
 #### Using async/await
+
 ```js
 five.handleError = (err, req, res, ctx) => {
   ctx.err(err.statusCode, err.message)
@@ -104,6 +108,7 @@ five.get('/:secretdata', [
 ```
 
 #### Using a "then"-able
+
 ```js
 five.get('/:secretdata', [
   (req, res, ctx) => {
@@ -221,7 +226,9 @@ Set a new allowable method for CORS requests.
 Add new keys to the ctx objects
 
 ## Do we need another REST server?
+
 Probably not, but [`restify`](http://restify.com), [`hapi`](http://hapijs.com) and [`express`](http://expressjs.com) are all over-kill on the types of services I'm building for the most part.
+
 * Setting up CORS is difficult or laborious: most REST services need to support CORS, this should be enabled by default (and easily configurable)
 * It has no need to accept anything other than `application/json` payloads, but you can easily extend it to
 * By default it will respond with `application/json` as well, but allow it be override-able if needed
@@ -234,4 +241,5 @@ I found that the other three projects aim to support way more than this, which m
 various other packages.
 
 ## License
-Copyright © 2018 Scripto LLC, Todd Kennedy. Reuse permitted under the Apache-2.0 license
+
+Copyright © 2019 Scripto LLC, Todd Kennedy. Reuse permitted under the Apache-2.0 license
